@@ -134,21 +134,57 @@
           <select id="scan-file"><option value="">全部文件</option></select>
           <select id="scan-level"><option value="">全部级别</option></select>
           <button type="button" id="scan-run">按规则扫一遍</button>
+          <button type="button" id="export-open" class="ghost">导出结果</button>
         </div>
       </div>
       <p class="scan-meta" id="scan-meta">还没有扫过，点右上角扫一遍</p>
       <p class="scan-warning hidden" id="scan-warning"></p>
       <div class="summary hidden" id="scan-summary"></div>
+
+      <div class="export-panel hidden" id="export-panel">
+        <h3>导出这一轮结果</h3>
+        <div class="export-scope">
+          <div class="export-group">
+            <span class="export-label">级别</span>
+            <span class="export-options" id="export-levels"></span>
+          </div>
+          <div class="export-group">
+            <span class="export-label">规则</span>
+            <span class="export-options" id="export-rules"></span>
+          </div>
+          <div class="export-group">
+            <span class="export-label">目录</span>
+            <span class="export-options" id="export-dirs"></span>
+          </div>
+          <div class="export-group">
+            <span class="export-label">方式</span>
+            <span class="export-options">
+              <label class="export-check"><input type="radio" name="export-mode" value="all" checked> 整轮带走</label>
+              <label class="export-check"><input type="radio" name="export-mode" value="picked"> 只带选中的 <span class="mono" id="export-picked-count">0</span> 条</label>
+            </span>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="export-preview">预演一下</button>
+          <button type="button" id="export-confirm" disabled>确认导出</button>
+          <button type="button" id="export-close" class="ghost">收起</button>
+        </div>
+        <div class="export-preview hidden" id="export-preview-box"></div>
+        <div class="export-result hidden" id="export-result"></div>
+      </div>
+
       <div class="table-wrap">
         <table class="grid">
           <thead>
             <tr>
+              <th class="pick-col"><input type="checkbox" id="hit-pick-all" title="全选或清空"></th>
               <th>规则编码</th>
               <th>级别</th>
               <th>规则名称</th>
               <th>文件</th>
               <th>行号</th>
               <th>那一行的内容</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody id="hit-body"></tbody>

@@ -383,3 +383,93 @@ label.full input {
   display: flex;
   gap: 10px;
 }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pick-col {
+  width: 32px;
+  max-width: 32px;
+  text-align: center;
+}
+
+tr.hit-ignored td {
+  background: #fafbfc;
+  color: var(--ink-soft);
+}
+
+.tag-ignored {
+  background: #eceff3;
+  color: var(--ink-soft);
+}
+
+.export-panel {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.export-panel h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.export-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.export-label {
+  flex: 0 0 32px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.export-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+label.export-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.export-none {
+  color: var(--ink-soft);
+}
+
+.export-preview,
+.export-result {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f9fafc;
+}
+
+.export-result {
+  border-color: #b7ddc9;
+  background: #eefaf3;
+  color: var(--ok);
+}

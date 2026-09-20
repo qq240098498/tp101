@@ -335,6 +335,20 @@ function normalizeFile(item, fallbackIndex) {
   };
 }
 
+// 把一条忽略记录整理成固定结构：靠规则、文件与行号定位一条命中
+function normalizeIgnore(item, fallbackIndex) {
+  const source = item && typeof item === 'object' ? item : {};
+  const lineNo = Number(source.lineNo);
+  return {
+    id: typeof source.id === 'string' && source.id ? source.id : `ignore-restored-${fallbackIndex + 1}`,
+    ruleId: typeof source.ruleId === 'string' ? source.ruleId : '',
+    fileId: typeof source.fileId === 'string' ? source.fileId : '',
+    lineNo: Number.isInteger(lineNo) && lineNo > 0 ? lineNo : 0,
+    operator: typeof source.operator === 'string' ? source.operator : '',
+    ignoredAt: typeof source.ignoredAt === 'string' && source.ignoredAt ? source.ignoredAt : new Date().toISOString(),
+  };
+}
+
 // 整份数据保证规则与文件结构一致，缺编号、缺名称、缺路径的条目一律丢掉
 function normalize(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
@@ -368,7 +382,27 @@ function normalize(raw) {
     files.push(file);
   });
 
-  return { rules, files };
+  // 忽略记录跟着规则与文件走：定位不全的、规则或文件已经不在的、重复的一律丢掉
+  const rawIgnores = Array.isArray(source.ignores) ? source.ignores : [];
+  const seenIgnoreKeys = new Set();
+  const ignores = [];
+  rawIgnores.forEach((item, index) => {
+    const ignore = normalizeIgnore(item, index);
+    if (!ignore.ruleId || !ignore.fileId || !ignore.lineNo) return;
+    if (!rules.some((rule) => rule.id === ignore.ruleId)) return;
+    if (!files.some((file) => file.id === ignore.fileId)) return;
+    const key = ignoreKeyOf(ignore);
+    if (seenIgnoreKeys.has(key)) return;
+    seenIgnoreKeys.add(key);
+    ignores.push(ignore);
+  });
+
+  return { rules, files, ignores };
+}
+
+// 一条命中对应一条忽略记录的定位串：规则编号、文件编号与行号拼在一起
+function ignoreKeyOf(ignore) {
+  return `${ignore.ruleId}|${ignore.fileId}|${ignore.lineNo}`;
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写
@@ -399,6 +433,8 @@ module.exports = {
   normalize,
   normalizeRule,
   normalizeFile,
+  normalizeIgnore,
+  ignoreKeyOf,
   LEVELS,
   STATUSES,
   FILE_TYPES,

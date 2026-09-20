@@ -107,6 +107,25 @@ app.post('/api/scan', (req, res) => {
   }
 });
 
+// 忽略一条命中：靠规则、文件与行号定位，重复忽略不会重复登记
+app.post('/api/ignores', (req, res) => {
+  try {
+    const result = api.ignoreHit(req.body);
+    res.status(result.created ? 201 : 200).json(result.ignore);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 恢复一条命中：把对应的忽略记录撤掉
+app.delete('/api/ignores', (req, res) => {
+  try {
+    res.json(api.restoreHit(req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 // 未匹配到的接口路径统一返回说明，避免前端拿到一串页面内容
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'API_NOT_FOUND', message: '接口不存在', field: '' } });

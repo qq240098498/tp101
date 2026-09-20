@@ -1,4 +1,4 @@
-const { load, LEVELS, STATUSES } = require('./store');
+const { load, LEVELS, STATUSES, ignoreKeyOf } = require('./store');
 const { ApiError, pickText } = require('./errors');
 
 // 一条规则管不管这个文件：适用文件类型写成全部的管所有文件，否则只认同类型的
@@ -47,6 +47,9 @@ function scan(options) {
 
   const filesInScope = scopeFile ? [scopeFile] : data.files;
 
+  // 被忽略过的命中这一轮照样扫出来，只是带上标记，清单里认得出来
+  const ignoredKeys = new Set((data.ignores || []).map(ignoreKeyOf));
+
   const hits = [];
   rulesUsed.forEach((rule) => {
     filesInScope.filter((file) => ruleAppliesToFile(rule, file)).forEach((file) => {
@@ -63,6 +66,7 @@ function scan(options) {
             fileType: file.type,
             lineNo: index + 1,
             lineText: text.trim(),
+            ignored: ignoredKeys.has(`${rule.id}|${file.id}|${index + 1}`),
           });
         }
       });
@@ -106,6 +110,7 @@ function scan(options) {
     hits,
     summary: {
       total: hits.length,
+      ignored: hits.filter((hit) => hit.ignored).length,
       byLevel,
       byRule: Array.from(byRuleMap.values()).sort((a, b) => (a.code < b.code ? -1 : 1)),
       byFile: Array.from(byFileMap.values()).sort((a, b) => (a.path < b.path ? -1 : 1)),
