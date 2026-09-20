@@ -107,6 +107,35 @@ app.post('/api/scan', (req, res) => {
   }
 });
 
+// 把某一条命中标成已忽略，重复标同一条不会留下两条记录
+app.post('/api/ignores', (req, res) => {
+  try {
+    const result = api.ignoreHit(req.body);
+    res.status(result.created ? 201 : 200).json(result.ignore);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 取消某一条命中的忽略
+app.delete('/api/ignores/:id', (req, res) => {
+  try {
+    res.json(api.unignoreHit(req.params.id));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 导出：页面把这一轮的命中与所选范围带上来，返回文件名、可读内容与汇总；
+// 预演与正式导出都走这里，两边数字自然对得上
+app.post('/api/scan/export', (req, res) => {
+  try {
+    res.json(api.buildExport(req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 // 未匹配到的接口路径统一返回说明，避免前端拿到一串页面内容
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'API_NOT_FOUND', message: '接口不存在', field: '' } });

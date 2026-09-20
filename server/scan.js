@@ -47,11 +47,17 @@ function scan(options) {
 
   const filesInScope = scopeFile ? [scopeFile] : data.files;
 
+  // 已忽略的命中按 规则 + 文件 + 行号 对回来，扫出来的每一条都标上忽略状态
+  const ignoreMap = new Map(
+    (data.ignores || []).map((item) => [`${item.ruleId}|${item.fileId}|${item.lineNo}`, item]),
+  );
+
   const hits = [];
   rulesUsed.forEach((rule) => {
     filesInScope.filter((file) => ruleAppliesToFile(rule, file)).forEach((file) => {
       file.content.split('\n').forEach((text, index) => {
         if (text.includes(rule.pattern)) {
+          const ignore = ignoreMap.get(`${rule.id}|${file.id}|${index + 1}`);
           hits.push({
             ruleId: rule.id,
             code: rule.code,
@@ -63,6 +69,10 @@ function scan(options) {
             fileType: file.type,
             lineNo: index + 1,
             lineText: text.trim(),
+            ignored: Boolean(ignore),
+            ignoreId: ignore ? ignore.id : '',
+            ignoredBy: ignore ? ignore.operator : '',
+            ignoredAt: ignore ? ignore.ignoredAt : '',
           });
         }
       });
@@ -106,6 +116,7 @@ function scan(options) {
     hits,
     summary: {
       total: hits.length,
+      ignored: hits.filter((hit) => hit.ignored).length,
       byLevel,
       byRule: Array.from(byRuleMap.values()).sort((a, b) => (a.code < b.code ? -1 : 1)),
       byFile: Array.from(byFileMap.values()).sort((a, b) => (a.path < b.path ? -1 : 1)),

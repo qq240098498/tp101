@@ -136,6 +136,11 @@
           <button type="button" id="scan-run">按规则扫一遍</button>
         </div>
       </div>
+      <div class="export-bar">
+        <button type="button" id="export-open" disabled>导出命中结果</button>
+        <span class="export-info" id="export-checked-info">已勾选 0 条</span>
+      </div>
+      <p class="export-result hidden" id="export-result"></p>
       <p class="scan-meta" id="scan-meta">还没有扫过，点右上角扫一遍</p>
       <p class="scan-warning hidden" id="scan-warning"></p>
       <div class="summary hidden" id="scan-summary"></div>
@@ -143,12 +148,14 @@
         <table class="grid">
           <thead>
             <tr>
+              <th class="check-col">勾选</th>
               <th>规则编码</th>
               <th>级别</th>
               <th>规则名称</th>
               <th>文件</th>
               <th>行号</th>
               <th>那一行的内容</th>
+              <th>忽略</th>
             </tr>
           </thead>
           <tbody id="hit-body"></tbody>
@@ -157,6 +164,39 @@
       <p class="empty-tip hidden" id="hit-empty">这一轮没有命中</p>
     </section>
   </main>
+
+  <div class="dialog-overlay hidden" id="export-dialog">
+    <div class="dialog" role="dialog" aria-label="导出命中结果">
+      <h3>导出命中结果</h3>
+      <div class="dialog-section">
+        <p class="dialog-label">带哪些命中</p>
+        <div class="check-group">
+          <label class="check"><input type="radio" name="export-mode" id="export-mode-all" value="all" checked> <span id="export-mode-all-label">当前这一轮全部命中</span></label>
+          <label class="check"><input type="radio" name="export-mode" id="export-mode-checked" value="checked"> <span id="export-mode-checked-label">只带勾选的命中</span></label>
+        </div>
+      </div>
+      <div class="dialog-section">
+        <p class="dialog-label">级别</p>
+        <div class="check-group" id="export-levels"></div>
+      </div>
+      <div class="dialog-section">
+        <p class="dialog-label">规则</p>
+        <div class="check-group" id="export-rules"></div>
+      </div>
+      <div class="dialog-section">
+        <p class="dialog-label">目录</p>
+        <div class="check-group" id="export-dirs"></div>
+      </div>
+      <div class="dialog-section">
+        <p class="dialog-label">预演</p>
+        <div class="preview" id="export-preview"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="export-confirm">确认导出</button>
+        <button type="button" id="export-cancel" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

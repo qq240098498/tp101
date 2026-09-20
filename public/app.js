@@ -12,6 +12,8 @@ const state = {
   editingRuleId: '',
   editingFileId: '',
   lastScan: null,
+  checkedHits: new Set(),
+  lastExport: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -86,6 +88,17 @@ function levelClass(level) {
   if (level === '错误') return 'lv-error';
   if (level === '警告') return 'lv-warn';
   return 'lv-hint';
+}
+
+// 一条命中的身份：规则 + 文件 + 行号，与服务端忽略、导出的口径一致
+function hitKeyOf(hit) {
+  return `${hit.ruleId}|${hit.fileId}|${hit.lineNo}`;
+}
+
+// 目录按路径里最后一个斜线切，根目录下的文件记成空串
+function dirOfPath(filePath) {
+  const index = filePath.lastIndexOf('/');
+  return index === -1 ? '' : filePath.slice(0, index);
 }
 
 const OPERATOR_KEY = 'check-hits-operator';
@@ -350,7 +363,7 @@ async function submitFile(event) {
   }
 }
 
-// 扫一遍，把概要与命中清单都画出来
+// 扫一遍，把概要与命中清单都画出来；新的一轮开始后，上一轮的勾选与导出说明都清掉
 async function runScan() {
   clearNotice();
   const body = {
@@ -361,6 +374,9 @@ async function runScan() {
   try {
     const result = await request('/api/scan', { method: 'POST', body: JSON.stringify(body) });
     state.lastScan = result;
+    state.checkedHits = new Set();
+    state.lastExport = null;
+    renderExportResult();
     renderScan(result);
   } catch (err) {
     notify(err.message, 'error');
@@ -380,6 +396,7 @@ function renderScan(result) {
   }
 
   const summaryBox = el('scan-summary');
+  const ignoredText = result.summary.ignored ? `（其中已忽略 ${result.summary.ignored} 条）` : '';
   const levelText = Object.keys(result.summary.byLevel)
     .map((key) => `${key} ${result.summary.byLevel[key]} 条`)
     .join('　');
@@ -390,21 +407,180 @@ function renderScan(result) {
     .map((item) => `${item.path} ${item.count} 条`)
     .join('　') || '没有文件命中';
   summaryBox.innerHTML = `
-    <div class="summary-line"><strong>一共命中 ${result.summary.total} 条</strong>　${escapeHtml(levelText)}</div>
+    <div class="summary-line"><strong>一共命中 ${result.summary.total} 条</strong>${ignoredText}　${escapeHtml(levelText)}</div>
     <div class="summary-line">按规则：${escapeHtml(ruleText)}</div>
     <div class="summary-line">按文件：${escapeHtml(fileText)}</div>`;
   summaryBox.classList.remove('hidden');
 
   const body = el('hit-body');
-  body.innerHTML = result.hits.map((hit) => `<tr>
+  body.innerHTML = result.hits.map((hit) => {
+    const key = hitKeyOf(hit);
+    const checked = state.checkedHits.has(key) ? ' checked' : '';
+    let ignoreTitle = '';
+    if (hit.ignored && hit.ignoredAt) {
+      ignoreTitle = `${hit.ignoredBy ? `${hit.ignoredBy} ` : ''}忽略于 ${formatTime(hit.ignoredAt)}`;
+    }
+    const ignoreCell = hit.ignored
+      ? `<span class="tag tag-ignored" title="${escapeHtml(ignoreTitle)}">已忽略</span>
+         <button type="button" class="link" data-hit-unignore="${escapeHtml(hit.ignoreId)}">取消忽略</button>`
+      : `<button type="button" class="link" data-hit-ignore="${escapeHtml(key)}">忽略</button>`;
+    return `<tr class="${hit.ignored ? 'hit-ignored' : ''}">
+      <td class="check-col"><input type="checkbox" data-hit-check="${escapeHtml(key)}"${checked}></td>
       <td class="mono">${escapeHtml(hit.code)}</td>
       <td><span class="tag ${levelClass(hit.level)}">${escapeHtml(hit.level)}</span></td>
       <td>${escapeHtml(hit.ruleName)}</td>
       <td class="mono">${escapeHtml(hit.path)}</td>
       <td class="mono">${hit.lineNo}</td>
       <td class="mono line-cell">${escapeHtml(hit.lineText)}</td>
-    </tr>`).join('');
+      <td class="actions">${ignoreCell}</td>
+    </tr>`;
+  }).join('');
   el('hit-empty').classList.toggle('hidden', result.hits.length > 0);
+  renderExportBar();
+}
+
+// 导出入口的状态：扫过且这一轮有命中才能导出，顺带刷新已勾选条数
+function renderExportBar() {
+  const hitCount = state.lastScan ? state.lastScan.hits.length : 0;
+  el('export-checked-info').textContent = `已勾选 ${state.checkedHits.size} 条`;
+  el('export-open').disabled = hitCount === 0;
+}
+
+// 导出完成后在页面上留下说明：多少条、按规则各多少条、文件名，数字与预演对得上
+function renderExportResult() {
+  const box = el('export-result');
+  if (!state.lastExport) {
+    box.classList.add('hidden');
+    box.textContent = '';
+    return;
+  }
+  const { filename, summary } = state.lastExport;
+  const ruleText = summary.byRule.map((item) => `${item.code} ${item.count} 条`).join('、') || '没有规则命中';
+  box.textContent = `导出完成：一共 ${summary.total} 条（其中已忽略 ${summary.ignored} 条）；按规则：${ruleText}；文件名 ${filename}`;
+  box.classList.remove('hidden');
+}
+
+// 导出对话框：范围、级别、规则、目录都在这一轮命中的基础上选，
+// 预演与正式导出走同一个接口，两边看到的数字自然对得上
+let previewSeq = 0;
+
+function checkedValues(selector, prop) {
+  return Array.from(document.querySelectorAll(selector)).map((node) => node.dataset[prop]);
+}
+
+function collectExportSelection() {
+  const modeNode = document.querySelector('input[name="export-mode"]:checked');
+  return {
+    mode: modeNode ? modeNode.value : 'all',
+    checkedKeys: Array.from(state.checkedHits),
+    levels: checkedValues('input[data-export-level]:checked', 'exportLevel'),
+    rules: checkedValues('input[data-export-rule]:checked', 'exportRule'),
+    directories: checkedValues('input[data-export-dir]:checked', 'exportDir'),
+  };
+}
+
+function updateExportModeLabels() {
+  const total = state.lastScan ? state.lastScan.hits.length : 0;
+  el('export-mode-all-label').textContent = `当前这一轮全部命中（${total} 条）`;
+  el('export-mode-checked-label').textContent = `只带勾选的命中（${state.checkedHits.size} 条）`;
+  el('export-mode-checked').disabled = state.checkedHits.size === 0;
+}
+
+function openExportDialog() {
+  if (!state.lastScan || !state.lastScan.hits.length) return;
+  clearNotice();
+
+  const levelCounts = {};
+  state.lastScan.hits.forEach((hit) => { levelCounts[hit.level] = (levelCounts[hit.level] || 0) + 1; });
+  el('export-levels').innerHTML = state.levels.map((level) => `
+    <label class="check"><input type="checkbox" data-export-level="${escapeHtml(level)}" checked> ${escapeHtml(level)}（${levelCounts[level] || 0} 条）</label>`).join('');
+
+  const ruleMap = new Map();
+  state.lastScan.hits.forEach((hit) => {
+    if (!ruleMap.has(hit.code)) ruleMap.set(hit.code, { code: hit.code, ruleName: hit.ruleName, count: 0 });
+    ruleMap.get(hit.code).count += 1;
+  });
+  const ruleItems = Array.from(ruleMap.values()).sort((a, b) => (a.code < b.code ? -1 : 1));
+  el('export-rules').innerHTML = ruleItems.map((item) => `
+    <label class="check"><input type="checkbox" data-export-rule="${escapeHtml(item.code)}" checked> ${escapeHtml(item.code)} ${escapeHtml(item.ruleName)}（${item.count} 条）</label>`).join('');
+
+  const dirMap = new Map();
+  state.lastScan.hits.forEach((hit) => {
+    const dir = dirOfPath(hit.path);
+    dirMap.set(dir, (dirMap.get(dir) || 0) + 1);
+  });
+  const dirItems = Array.from(dirMap.keys()).sort();
+  el('export-dirs').innerHTML = dirItems.map((dir) => `
+    <label class="check"><input type="checkbox" data-export-dir="${escapeHtml(dir)}" checked> ${escapeHtml(dir || '（根目录）')}（${dirMap.get(dir)} 条）</label>`).join('');
+
+  el('export-mode-all').checked = true;
+  updateExportModeLabels();
+  el('export-dialog').classList.remove('hidden');
+  refreshExportPreview();
+}
+
+function closeExportDialog() {
+  previewSeq += 1;
+  el('export-dialog').classList.add('hidden');
+}
+
+async function refreshExportPreview() {
+  if (!state.lastScan) return;
+  const seq = ++previewSeq;
+  const selection = collectExportSelection();
+  try {
+    const result = await request('/api/scan/export', {
+      method: 'POST',
+      body: JSON.stringify({ scannedAt: state.lastScan.scannedAt, hits: state.lastScan.hits, selection }),
+    });
+    if (seq !== previewSeq) return;
+    renderExportPreview(result.summary);
+  } catch (err) {
+    if (seq !== previewSeq) return;
+    el('export-preview').innerHTML = `<div class="summary-line">${escapeHtml(err.message)}</div>`;
+    el('export-confirm').disabled = true;
+  }
+}
+
+function renderExportPreview(summary) {
+  const levelText = state.levels.map((key) => `${key} ${summary.byLevel[key] || 0} 条`).join('　');
+  const ruleText = summary.byRule.map((item) => `${item.code} ${item.count} 条`).join('　') || '没有规则命中';
+  el('export-preview').innerHTML = `
+    <div class="summary-line"><strong>预演：一共 ${summary.total} 条</strong>（其中已忽略 ${summary.ignored} 条）</div>
+    <div class="summary-line">按级别：${escapeHtml(levelText)}</div>
+    <div class="summary-line">按规则：${escapeHtml(ruleText)}</div>`;
+  el('export-confirm').disabled = summary.total === 0;
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function confirmExport() {
+  if (!state.lastScan) return;
+  clearNotice();
+  const selection = collectExportSelection();
+  try {
+    const result = await request('/api/scan/export', {
+      method: 'POST',
+      body: JSON.stringify({ scannedAt: state.lastScan.scannedAt, hits: state.lastScan.hits, selection }),
+    });
+    downloadTextFile(result.filename, result.content);
+    state.lastExport = { filename: result.filename, summary: result.summary };
+    renderExportResult();
+    closeExportDialog();
+    notify(`已导出 ${result.summary.total} 条命中`, 'ok');
+  } catch (err) {
+    notify(err.message, 'error');
+  }
 }
 
 // 列表上的操作用事件委托统一处理，列表重绘之后不需要重新绑定
@@ -463,7 +639,64 @@ document.addEventListener('click', async (event) => {
     } catch (err) {
       notify(err.message, 'error');
     }
+    return;
   }
+
+  // 忽略只改这一条命中的状态，命中清单本身不动，就地更新后重画
+  if (node.dataset.hitIgnore) {
+    clearNotice();
+    const hit = state.lastScan && state.lastScan.hits.find((item) => hitKeyOf(item) === node.dataset.hitIgnore);
+    if (!hit) return;
+    try {
+      const ignore = await request('/api/ignores', {
+        method: 'POST',
+        body: JSON.stringify({
+          ruleId: hit.ruleId,
+          fileId: hit.fileId,
+          lineNo: hit.lineNo,
+          operator: currentOperator(),
+        }),
+      });
+      hit.ignored = true;
+      hit.ignoreId = ignore.id;
+      hit.ignoredBy = ignore.operator;
+      hit.ignoredAt = ignore.ignoredAt;
+      state.lastScan.summary.ignored += 1;
+      renderScan(state.lastScan);
+      notify(`已忽略 ${hit.code} 在 ${hit.path} 第 ${hit.lineNo} 行的命中`, 'ok');
+    } catch (err) {
+      notify(err.message, 'error');
+    }
+    return;
+  }
+
+  if (node.dataset.hitUnignore) {
+    clearNotice();
+    const hit = state.lastScan && state.lastScan.hits.find((item) => item.ignoreId === node.dataset.hitUnignore);
+    try {
+      await request(`/api/ignores/${encodeURIComponent(node.dataset.hitUnignore)}`, { method: 'DELETE' });
+      if (hit) {
+        hit.ignored = false;
+        hit.ignoreId = '';
+        hit.ignoredBy = '';
+        hit.ignoredAt = '';
+        state.lastScan.summary.ignored = Math.max(0, state.lastScan.summary.ignored - 1);
+        renderScan(state.lastScan);
+      }
+      notify('已取消忽略', 'ok');
+    } catch (err) {
+      notify(err.message, 'error');
+    }
+  }
+});
+
+// 命中行的勾选框用 change 委托，勾了哪些跟着状态走，重画清单也不丢
+document.addEventListener('change', (event) => {
+  const node = event.target;
+  if (!(node instanceof HTMLInputElement) || !node.dataset.hitCheck) return;
+  if (node.checked) state.checkedHits.add(node.dataset.hitCheck);
+  else state.checkedHits.delete(node.dataset.hitCheck);
+  renderExportBar();
 });
 
 el('rule-form').addEventListener('submit', submitRule);
@@ -505,6 +738,12 @@ el('file-filter-reset').addEventListener('click', () => {
   loadFiles().catch((err) => notify(err.message, 'error'));
 });
 el('scan-run').addEventListener('click', runScan);
+el('export-open').addEventListener('click', openExportDialog);
+el('export-cancel').addEventListener('click', closeExportDialog);
+el('export-confirm').addEventListener('click', confirmExport);
+el('export-dialog').addEventListener('change', (event) => {
+  if (event.target instanceof HTMLInputElement) refreshExportPreview();
+});
 el('rule-filter-level').addEventListener('change', () => {
   loadRules().catch((err) => notify(err.message, 'error'));
 });

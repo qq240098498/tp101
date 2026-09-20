@@ -335,7 +335,25 @@ function normalizeFile(item, fallbackIndex) {
   };
 }
 
-// 整份数据保证规则与文件结构一致，缺编号、缺名称、缺路径的条目一律丢掉
+// 把单条忽略记录整理成固定结构：一条命中由规则、文件与行号唯一确定，
+// 行号不是正整数的记成 0，交给整理结构时丢掉
+function normalizeIgnore(item, fallbackIndex) {
+  const source = item && typeof item === 'object' ? item : {};
+  const lineNo = Number(source.lineNo);
+  return {
+    id: typeof source.id === 'string' && source.id ? source.id : `ignore-restored-${fallbackIndex + 1}`,
+    ruleId: typeof source.ruleId === 'string' ? source.ruleId : '',
+    fileId: typeof source.fileId === 'string' ? source.fileId : '',
+    lineNo: Number.isInteger(lineNo) && lineNo > 0 ? lineNo : 0,
+    code: typeof source.code === 'string' ? source.code : '',
+    path: typeof source.path === 'string' ? source.path : '',
+    operator: typeof source.operator === 'string' ? source.operator : '',
+    ignoredAt: typeof source.ignoredAt === 'string' && source.ignoredAt ? source.ignoredAt : new Date().toISOString(),
+  };
+}
+
+// 整份数据保证规则、文件与忽略记录结构一致，缺编号、缺名称、缺路径的条目一律丢掉；
+// 忽略记录跟着规则与文件走，规则或文件不在了，对应的忽略记录也一起清掉
 function normalize(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const seed = { rules: seedRules(), files: seedFiles() };
@@ -368,7 +386,24 @@ function normalize(raw) {
     files.push(file);
   });
 
-  return { rules, files };
+  const rawIgnores = Array.isArray(source.ignores) ? source.ignores : [];
+  const ruleIds = new Set(rules.map((item) => item.id));
+  const fileIds = new Set(files.map((item) => item.id));
+  const seenIgnoreIds = new Set();
+  const seenIgnoreKeys = new Set();
+  const ignores = [];
+  rawIgnores.forEach((item, index) => {
+    const ignore = normalizeIgnore(item, index);
+    if (!ignore.id || !ignore.ruleId || !ignore.fileId || !ignore.lineNo) return;
+    if (!ruleIds.has(ignore.ruleId) || !fileIds.has(ignore.fileId)) return;
+    const key = `${ignore.ruleId}|${ignore.fileId}|${ignore.lineNo}`;
+    if (seenIgnoreIds.has(ignore.id) || seenIgnoreKeys.has(key)) return;
+    seenIgnoreIds.add(ignore.id);
+    seenIgnoreKeys.add(key);
+    ignores.push(ignore);
+  });
+
+  return { rules, files, ignores };
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写
@@ -377,7 +412,7 @@ function load() {
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
     return normalize(JSON.parse(raw));
   } catch (err) {
-    const data = { rules: seedRules(), files: seedFiles() };
+    const data = { rules: seedRules(), files: seedFiles(), ignores: [] };
     save(data);
     return data;
   }
@@ -399,6 +434,7 @@ module.exports = {
   normalize,
   normalizeRule,
   normalizeFile,
+  normalizeIgnore,
   LEVELS,
   STATUSES,
   FILE_TYPES,

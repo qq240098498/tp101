@@ -1,8 +1,10 @@
-// 对外的动作集合：页面只经过这一层，规则、文件与扫描三块各自管好自己的校验
+// 对外的动作集合：页面只经过这一层，规则、文件、扫描、忽略与导出各自管好自己的校验
 const { ApiError, pickText } = require('./errors');
 const rules = require('./rules');
 const files = require('./files');
+const ignores = require('./ignores');
 const { scan } = require('./scan');
+const { buildExport } = require('./export');
 
 // 查询参数在页面与接口之间来回传的都是文本，这里统一去掉首尾空白并兜住空值
 function readQuery(query, name) {
@@ -13,6 +15,8 @@ module.exports = {
   ApiError,
   readQuery,
   scan,
+  buildExport,
   ...rules,
   ...files,
+  ...ignores,
 };
